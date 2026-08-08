@@ -70,6 +70,25 @@ class OpenExchangeRatesConfigurationTest {
                     OpenExchangeRatesConfiguration configuration = context.getBean(OpenExchangeRatesConfiguration.class);
                     assertTrue(configuration.getCache().isEnabled());
                     assertEquals(120, configuration.getCache().getLifespan());
+                    assertFalse(configuration.getCache().getRefresh().isEnabled());
+                    assertEquals(5, configuration.getCache().getRetry().getBackoff());
+                });
+    }
+
+    @Test
+    @DisplayName("it should read the proactive refresh and retry backoff properties from the application configuration correctly")
+    void it_should_read_the_proactive_refresh_and_retry_backoff_properties_from_the_application_configuration_correctly() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(Configuration.class)
+                .withPropertyValues(
+                        "openexchangerates.appId=some-app-id",
+                        "openexchangerates.cache.refresh.enabled=true",
+                        "openexchangerates.cache.retry.backoff=15"
+                )
+                .run(context -> {
+                    OpenExchangeRatesConfiguration configuration = context.getBean(OpenExchangeRatesConfiguration.class);
+                    assertTrue(configuration.getCache().getRefresh().isEnabled());
+                    assertEquals(15, configuration.getCache().getRetry().getBackoff());
                 });
     }
 

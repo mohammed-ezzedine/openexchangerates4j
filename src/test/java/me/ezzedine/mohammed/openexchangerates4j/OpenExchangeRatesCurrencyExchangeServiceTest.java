@@ -2,17 +2,24 @@ package me.ezzedine.mohammed.openexchangerates4j;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Currency;
+import java.util.Date;
 import java.util.Map;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class OpenExchangeRatesCurrencyExchangeServiceTest {
@@ -22,17 +29,20 @@ class OpenExchangeRatesCurrencyExchangeServiceTest {
     private static final Currency CHF_CURRENCY = Currency.getInstance("CHF");
     public static final double EUR_RATE = new Random().nextDouble(0, 2);
     public static final double CHF_RATE = new Random().nextDouble(0, 2);
+    private OpenExchangeRatesCurrencyRatesManager ratesManager;
     private OpenExchangeRatesCurrencyExchangeService currencyExchangeManager;
 
     @BeforeEach
     void setUp() {
-        OpenExchangeRatesCurrencyRatesManager ratesManager = mock(OpenExchangeRatesCurrencyRatesManager.class);
+        ratesManager = mock(OpenExchangeRatesCurrencyRatesManager.class);
         when(ratesManager.getRates()).thenReturn(OpenExchangeRatesCurrencyRates.builder()
                 .base("USD")
                 .rates(Map.of(
                         "CHF", CHF_RATE,
                         "EUR", EUR_RATE
                 ))
+                .lastUpdatedAt(new Date())
+                .stale(false)
                 .build());
 
         currencyExchangeManager = new OpenExchangeRatesCurrencyExchangeService(ratesManager);
@@ -47,16 +57,30 @@ class OpenExchangeRatesCurrencyExchangeServiceTest {
     @Test
     @DisplayName("it should return zero if the specified amount is zero")
     void it_should_return_zero_if_the_specified_amount_is_zero() {
-        BigDecimal result = currencyExchangeManager.convert(BigDecimal.ZERO, EUR_CURRENCY, CHF_CURRENCY);
-        assertEquals(BigDecimal.ZERO, result);
+        OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(BigDecimal.ZERO, EUR_CURRENCY, CHF_CURRENCY);
+        assertEquals(OpenExchangeRatesConversionResult.fresh(BigDecimal.ZERO), result);
+    }
+
+    @Test
+    @DisplayName("it should not consult the rates manager when the specified amount is zero")
+    void it_should_not_consult_the_rates_manager_when_the_specified_amount_is_zero() {
+        currencyExchangeManager.convert(BigDecimal.ZERO, EUR_CURRENCY, CHF_CURRENCY);
+        verify(ratesManager, never()).getRates();
     }
 
     @Test
     @DisplayName("it should return the same amount when the source and target currencies are the same")
     void it_should_return_the_same_amount_when_the_source_and_target_currencies_are_the_same() {
         BigDecimal amount = BigDecimal.valueOf(new Random().nextDouble(10, 100));
-        BigDecimal result = currencyExchangeManager.convert(amount, EUR_CURRENCY, EUR_CURRENCY);
-        assertEquals(amount, result);
+        OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(amount, EUR_CURRENCY, EUR_CURRENCY);
+        assertEquals(OpenExchangeRatesConversionResult.fresh(amount), result);
+    }
+
+    @Test
+    @DisplayName("it should not consult the rates manager when the source and target currencies are the same")
+    void it_should_not_consult_the_rates_manager_when_the_source_and_target_currencies_are_the_same() {
+        currencyExchangeManager.convert(BigDecimal.valueOf(new Random().nextDouble(10, 100)), EUR_CURRENCY, EUR_CURRENCY);
+        verify(ratesManager, never()).getRates();
     }
 
 
@@ -64,26 +88,73 @@ class OpenExchangeRatesCurrencyExchangeServiceTest {
     @DisplayName("it should convert the amount correctly when the source currency is usd")
     void it_should_convert_the_amount_correctly_when_the_source_currency_is_usd() {
         BigDecimal amount = BigDecimal.valueOf(new Random().nextDouble(10, 100));
-        BigDecimal result = currencyExchangeManager.convert(amount, USD_CURRENCY, EUR_CURRENCY);
-       assertEquals(amount.multiply(BigDecimal.valueOf(EUR_RATE)), result);
+        OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(amount, USD_CURRENCY, EUR_CURRENCY);
+        assertEquals(OpenExchangeRatesConversionResult.fresh(amount.multiply(BigDecimal.valueOf(EUR_RATE))), result);
     }
 
     @Test
     @DisplayName("it should convert the amount correctly when the target currency is usd")
     void it_should_convert_the_amount_correctly_when_the_target_currency_is_usd() {
         BigDecimal amount = BigDecimal.valueOf(new Random().nextDouble(10, 100));
-        BigDecimal result = currencyExchangeManager.convert(amount, CHF_CURRENCY, USD_CURRENCY);
-        assertEquals(amount.divide(BigDecimal.valueOf(CHF_RATE), RoundingMode.DOWN), result);
+        OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(amount, CHF_CURRENCY, USD_CURRENCY);
+        assertEquals(OpenExchangeRatesConversionResult.fresh(amount.divide(BigDecimal.valueOf(CHF_RATE), RoundingMode.DOWN)), result);
     }
 
     @Test
     @DisplayName("it should convert the amount correctly when neither the source nor the target currency is usd")
     void it_should_convert_the_amount_correctly_when_neither_the_source_nor_the_target_currency_is_usd() {
         BigDecimal amount = BigDecimal.valueOf(new Random().nextDouble(10, 100));
-        BigDecimal result = currencyExchangeManager.convert(amount, CHF_CURRENCY, EUR_CURRENCY);
+        OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(amount, CHF_CURRENCY, EUR_CURRENCY);
         BigDecimal expected = amount
                 .divide(BigDecimal.valueOf(CHF_RATE), RoundingMode.DOWN)
                 .multiply(BigDecimal.valueOf(EUR_RATE));
-        assertEquals(expected, result);
+        assertEquals(OpenExchangeRatesConversionResult.fresh(expected), result);
+    }
+
+    @Nested
+    @DisplayName("When the underlying rates are stale")
+    class WhenTheUnderlyingRatesAreStale {
+
+        @BeforeEach
+        void setUp() {
+            when(ratesManager.getRates()).thenReturn(OpenExchangeRatesCurrencyRates.builder()
+                    .base("USD")
+                    .rates(Map.of(
+                            "CHF", CHF_RATE,
+                            "EUR", EUR_RATE
+                    ))
+                    .lastUpdatedAt(new Date())
+                    .stale(true)
+                    .build());
+        }
+
+        @Test
+        @DisplayName("it should mark the conversion result as stale and include a warning")
+        void it_should_mark_the_conversion_result_as_stale_and_include_a_warning() {
+            OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(BigDecimal.TEN, USD_CURRENCY, EUR_CURRENCY);
+
+            assertTrue(result.isStale());
+            assertFalse(result.getWarning().isBlank());
+        }
+
+        @Test
+        @DisplayName("it should still compute the correct converted amount")
+        void it_should_still_compute_the_correct_converted_amount() {
+            OpenExchangeRatesConversionResult result = currencyExchangeManager.convert(BigDecimal.TEN, USD_CURRENCY, EUR_CURRENCY);
+
+            assertEquals(BigDecimal.TEN.multiply(BigDecimal.valueOf(EUR_RATE)), result.getAmount());
+        }
+
+        @Test
+        @DisplayName("it should not mark shortcut conversions (zero amount or same currency) as stale")
+        void it_should_not_mark_shortcut_conversions_as_stale() {
+            OpenExchangeRatesConversionResult zeroResult = currencyExchangeManager.convert(BigDecimal.ZERO, USD_CURRENCY, EUR_CURRENCY);
+            OpenExchangeRatesConversionResult sameCurrencyResult = currencyExchangeManager.convert(BigDecimal.TEN, USD_CURRENCY, USD_CURRENCY);
+
+            assertFalse(zeroResult.isStale());
+            assertNull(zeroResult.getWarning());
+            assertFalse(sameCurrencyResult.isStale());
+            assertNull(sameCurrencyResult.getWarning());
+        }
     }
 }

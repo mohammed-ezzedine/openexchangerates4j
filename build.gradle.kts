@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "me.ezzedine.mohammed"
-version = "1.0.0"
+version = "2.0.0"
 
 java {
     toolchain {
@@ -60,7 +60,7 @@ publishing {
 
             groupId = "me.ezzedine.mohammed"
             artifactId = "openexchangerates4j"
-            version = "1.0.0"
+            version = "2.0.0"
 
             pom {
                 name.set("Open Exchange Rates for Java")
