@@ -32,5 +32,34 @@ class OpenExchangeRatesConfiguration {
          * The cache lifespan in minutes.
          * */
         private int lifespan = 120;
+
+        /**
+         * The proactive background refresh configuration.
+         * */
+        private RefreshConfiguration refresh = new RefreshConfiguration();
+
+        /**
+         * The failed fetch attempt retry configuration.
+         * */
+        private RetryConfiguration retry = new RetryConfiguration();
+
+        @Data
+        static class RefreshConfiguration {
+
+            /**
+             * Whether to proactively refresh the rates in the background before the cache expires,
+             * using the cache lifespan as the refresh interval.
+             * */
+            private boolean enabled = false;
+        }
+
+        @Data
+        static class RetryConfiguration {
+
+            /**
+             * The number of minutes to wait after a failed fetch attempt before retrying the server again.
+             * */
+            private int backoff = 5;
+        }
     }
 }

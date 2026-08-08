@@ -11,30 +11,38 @@ public class OpenExchangeRatesCurrencyExchangeService {
 
     private final OpenExchangeRatesCurrencyRatesManager ratesManager;
 
-    public BigDecimal convert(BigDecimal amount, Currency sourceCurrency, Currency targetCurrency) {
+    public OpenExchangeRatesConversionResult convert(BigDecimal amount, Currency sourceCurrency, Currency targetCurrency) {
         if (amount.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("Value must be greater than zero");
         }
 
         if (amount.equals(BigDecimal.ZERO)) {
-            return BigDecimal.ZERO;
+            return OpenExchangeRatesConversionResult.fresh(BigDecimal.ZERO);
         }
 
         if (sourceCurrency == targetCurrency) {
-            return amount;
+            return OpenExchangeRatesConversionResult.fresh(amount);
         }
 
         OpenExchangeRatesCurrencyRates rates = ratesManager.getRates();
+        BigDecimal convertedAmount;
         if (rates.getBase().equals(sourceCurrency.getCurrencyCode())) {
-            return convertFromBaseCurrency(amount, targetCurrency, rates);
+            convertedAmount = convertFromBaseCurrency(amount, targetCurrency, rates);
+        } else if (rates.getBase().equals(targetCurrency.getCurrencyCode())) {
+            convertedAmount = convertToBaseCurrency(amount, sourceCurrency, rates);
+        } else {
+            BigDecimal amountInBaseCurrency = convertToBaseCurrency(amount, sourceCurrency, rates);
+            convertedAmount = convertFromBaseCurrency(amountInBaseCurrency, targetCurrency, rates);
         }
 
-        if (rates.getBase().equals(targetCurrency.getCurrencyCode())) {
-            return convertToBaseCurrency(amount, sourceCurrency, rates);
-        }
+        return rates.isStale()
+                ? OpenExchangeRatesConversionResult.stale(convertedAmount, buildStaleWarning(rates))
+                : OpenExchangeRatesConversionResult.fresh(convertedAmount);
+    }
 
-        BigDecimal amountInBaseCurrency = convertToBaseCurrency(amount, sourceCurrency, rates);
-        return convertFromBaseCurrency(amountInBaseCurrency, targetCurrency, rates);
+    private static String buildStaleWarning(OpenExchangeRatesCurrencyRates rates) {
+        return "The Open Exchange Rates server was unreachable; this result uses cached exchange rates last updated at "
+                + rates.getLastUpdatedAt() + ". The data may be out of date.";
     }
 
     private static BigDecimal convertFromBaseCurrency(BigDecimal amount, Currency targetCurrency, OpenExchangeRatesCurrencyRates rates) {

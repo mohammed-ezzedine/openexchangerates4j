@@ -6,15 +6,11 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Date;
-import java.util.Map;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-final class OpenExchangeRatesCurrencyRates {
-    private String base;
-    private Map<String, Double> rates;
-    private Date lastUpdatedAt;
-    private boolean stale;
+final class OpenExchangeRatesCurrencyRatesFailure {
+    private Date lastFailedAt;
 }
